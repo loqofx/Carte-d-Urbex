@@ -75,7 +75,7 @@ const AppUI = {
 
   // ---------------- Thème ----------------
   initTheme() {
-    const saved = localStorage.getItem("urbex-theme") || "dark";
+    const saved = localStorage.getItem("urbex-theme") || "light";
     document.documentElement.setAttribute("data-theme", saved);
   },
   toggleTheme() {
@@ -411,7 +411,7 @@ const AppUI = {
 
   renderSpotForm(spot) {
     const s = spot || {
-      name: "", category: "chateau", emoji: "", status: "intact",
+      name: "", category: "chateau", emoji: "", status: "abandon",
       rating_state: 5, rating_safety: 5, rating_interest: 5, notes: "",
       lat: null, lng: null,
     };
@@ -447,7 +447,7 @@ const AppUI = {
           <div class="flex gap-2 mt-1">
             <input type="text" id="f-coords" placeholder=" 48.858844, 2.294350" value="${coordsStr}" class="w-full" />
           </div>
-          <button type="button" id="btn-pick-map" class="btn-ghost w-full mt-2">📍</button>
+          <button type="button" id="btn-pick-map" class="btn-ghost w-full mt-2">📍 Placer sur la carte</button>
           <p id="pick-hint" class="text-sm mt-1 hidden" style="color:var(--rust)">Clique sur la carte pour placer le point…</p>
         </div>
 
@@ -485,7 +485,7 @@ const AppUI = {
         </div>
 
         <div class="col-span-2">
-          <label class="label-eyebrow mb-1 block">Photos</label>
+          <label class="label-eyebrow mb-1 block">Photos (Recommandé : par paquets de 10 max)</label>
           <div class="dropzone" id="dropzone">
             <p class="m-0">Déposer ici | Parcourir</p>
             <input type="file" id="f-photos" multiple accept="image/*" class="hidden" />
@@ -495,7 +495,7 @@ const AppUI = {
       </div>
 
       <div class="flex gap-2 mt-4">
-        <button type="submit" class="btn-primary flex-1">${spot ? "Enregistrer" : "Créer le spot"}</button>
+        <button type="submit" id="btn-submit-spot" class="btn-primary flex-1">${spot ? "Enregistrer" : "Créer le spot"}</button>
         <button type="button" class="btn-ghost" id="btn-cancel-form">Annuler</button>
       </div>
     `;
@@ -511,7 +511,7 @@ const AppUI = {
     ["state", "safety", "interest"].forEach((key) => {
       const input = document.getElementById(`f-rating-${key}`);
       const out = document.getElementById(`v-${key}`);
-      input.oninput = () => (out.textContent = input.value);
+      if (input && out) input.oninput = () => (out.textContent = input.value);
     });
 
     document.getElementById("btn-pick-map").onclick = () => {
@@ -522,15 +522,17 @@ const AppUI = {
 
     const dz = document.getElementById("dropzone");
     const fileInput = document.getElementById("f-photos");
-    dz.onclick = () => fileInput.click();
-    fileInput.onchange = () => this._addPendingFiles(fileInput.files);
-    dz.addEventListener("dragover", (e) => { e.preventDefault(); dz.classList.add("dragover"); });
-    dz.addEventListener("dragleave", () => dz.classList.remove("dragover"));
-    dz.addEventListener("drop", (e) => {
-      e.preventDefault();
-      dz.classList.remove("dragover");
-      this._addPendingFiles(e.dataTransfer.files);
-    });
+    if (dz && fileInput) {
+      dz.onclick = () => fileInput.click();
+      fileInput.onchange = () => this._addPendingFiles(fileInput.files);
+      dz.addEventListener("dragover", (e) => { e.preventDefault(); dz.classList.add("dragover"); });
+      dz.addEventListener("dragleave", () => dz.classList.remove("dragover"));
+      dz.addEventListener("drop", (e) => {
+        e.preventDefault();
+        dz.classList.remove("dragover");
+        this._addPendingFiles(e.dataTransfer.files);
+      });
+    }
 
     const addVisitBtn = document.getElementById("btn-add-visit-date");
     if (addVisitBtn) {
@@ -618,47 +620,70 @@ const AppUI = {
 
   async _submitSpotForm(e, existingSpot) {
     e.preventDefault();
-    
-    const coordsRaw = document.getElementById("f-coords").value;
-    const parts = coordsRaw.split(",").map((s) => s.trim());
-    
-    const lat = parseFloat(parts[0]);
-    const lng = parseFloat(parts[1]);
 
-    if (isNaN(lat) || isNaN(lng) || parts.length < 2) {
-      alert("Format de coordonnées invalide. Veuillez entrer au format : Latitude, Longitude (Ex: 48.858844, 2.294350)");
-      return;
+    const submitBtn = document.getElementById("btn-submit-spot");
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.textContent = "Création en cours...";
     }
 
-    const payload = {
-      name: document.getElementById("f-name").value,
-      category: document.getElementById("f-category").value,
-      emoji: document.getElementById("f-emoji").value || null,
-      status: document.getElementById("f-status").value,
-      lat, lng,
-      rating_state: parseInt(document.getElementById("f-rating-state").value),
-      rating_safety: parseInt(document.getElementById("f-rating-safety").value),
-      rating_interest: parseInt(document.getElementById("f-rating-interest").value),
-      notes: document.getElementById("f-notes").value,
-      warnings: this.tempWarnings,
-    };
+    try {
+      const coordsRaw = document.getElementById("f-coords").value;
+      const parts = coordsRaw.split(",").map((s) => s.trim());
+      
+      const lat = parseFloat(parts[0]);
+      const lng = parseFloat(parts[1]);
 
-    let spotId;
-    if (existingSpot) {
-      await API.updateSpot(existingSpot.id, payload);
-      spotId = existingSpot.id;
-    } else {
-      payload.visit_dates = this.visitDatesDraft;
-      const created = await API.createSpot(payload);
-      spotId = created.id;
+      if (isNaN(lat) || isNaN(lng) || parts.length < 2) {
+        alert("Format de coordonnées invalide. Veuillez entrer au format : Latitude, Longitude (Ex: 48.858844, 2.294350)");
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.textContent = existingSpot ? "Enregistrer" : "Créer le spot";
+        }
+        return;
+      }
+
+      const payload = {
+        name: document.getElementById("f-name").value,
+        category: document.getElementById("f-category").value,
+        emoji: document.getElementById("f-emoji").value || null,
+        status: document.getElementById("f-status").value,
+        lat, lng,
+        rating_state: parseInt(document.getElementById("f-rating-state").value),
+        rating_safety: parseInt(document.getElementById("f-rating-safety").value),
+        rating_interest: parseInt(document.getElementById("f-rating-interest").value),
+        notes: document.getElementById("f-notes").value,
+        warnings: this.tempWarnings,
+      };
+
+      let spotId;
+      if (existingSpot) {
+        await API.updateSpot(existingSpot.id, payload);
+        spotId = existingSpot.id;
+      } else {
+        // CORRECTION : Prise en compte de la date du champ si non ajoutée via le bouton '+'
+        const dateInput = document.getElementById("f-visit-date");
+        if (this.visitDatesDraft.length === 0 && dateInput && dateInput.value) {
+          this.visitDatesDraft.push(dateInput.value);
+        }
+        payload.visit_dates = this.visitDatesDraft;
+        const created = await API.createSpot(payload);
+        spotId = created.id;
+      }
+
+      if (this.pendingFiles.length) {
+        await API.uploadPhotos(spotId, this.pendingFiles);
+      }
+
+      this.closeAddSpotModal();
+      await window.App.refreshSpots();
+      this.openSpotDetail(spotId, true);
+    } catch (err) {
+      alert("Une erreur est survenue lors de l'enregistrement : " + err.message);
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.textContent = existingSpot ? "Enregistrer" : "Créer le spot";
+      }
     }
-
-    if (this.pendingFiles.length) {
-      await API.uploadPhotos(spotId, this.pendingFiles);
-    }
-
-    this.closeAddSpotModal();
-    await window.App.refreshSpots();
-    this.openSpotDetail(spotId, true);
   },
 };
