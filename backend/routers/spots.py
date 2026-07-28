@@ -29,6 +29,9 @@ def list_spots(
     db: Session = Depends(get_db),
 ):
     try:
+        # Nettoie la transaction au cas où PostgreSQL est resté bloqué sur une erreur précédente
+        db.rollback()
+
         q = _query_with_relations(db)
         
         if category:
@@ -40,7 +43,7 @@ def list_spots(
             
         spots = q.distinct().all()
         
-        # Nettoyage préventif des données JSON corrompues (warnings)
+        # Nettoyage des données
         for spot in spots:
             if spot.warnings and isinstance(spot.warnings, list):
                 cleaned_warnings = []
@@ -58,8 +61,9 @@ def list_spots(
             
         return spots
     except Exception as e:
+        db.rollback()
         print(f"Erreur SQL/Serialization list_spots: {str(e)}")
-        # Fallback de secours si la jointure ou le filtre échoue
+        # Fallback de secours
         raw_spots = db.query(models.Spot).all()
         for s in raw_spots:
             if not isinstance(s.warnings, list):
@@ -69,12 +73,14 @@ def list_spots(
 
 @router.get("/meta/categories", response_model=List[str])
 def list_categories(db: Session = Depends(get_db)):
+    db.rollback()
     rows = db.query(models.Spot.category).distinct().all()
     return sorted({r[0] for r in rows if r[0]})
 
 
 @router.get("/meta/years", response_model=List[str])
 def list_years(db: Session = Depends(get_db)):
+    db.rollback()
     rows = db.query(models.Visit.visit_date).all()
     years = sorted({r[0][:4] for r in rows if r[0]}, reverse=True)
     return years
@@ -82,6 +88,7 @@ def list_years(db: Session = Depends(get_db)):
 
 @router.get("/{spot_id}", response_model=schemas.SpotOut)
 def get_spot(spot_id: int, db: Session = Depends(get_db)):
+    db.rollback()
     spot = _query_with_relations(db).filter(models.Spot.id == spot_id).first()
     if not spot:
         raise HTTPException(status_code=404, detail="Spot introuvable")
@@ -96,6 +103,7 @@ def get_spot(spot_id: int, db: Session = Depends(get_db)):
 
 @router.post("", response_model=schemas.SpotOut, status_code=201)
 def create_spot(payload: schemas.SpotCreate, db: Session = Depends(get_db)):
+    db.rollback()
     data = payload.model_dump(exclude={"visit_dates"})
     
     if "warnings" in data and data["warnings"]:
@@ -120,6 +128,7 @@ def create_spot(payload: schemas.SpotCreate, db: Session = Depends(get_db)):
 
 @router.put("/{spot_id}", response_model=schemas.SpotOut)
 def update_spot(spot_id: int, payload: schemas.SpotUpdate, db: Session = Depends(get_db)):
+    db.rollback()
     spot = db.query(models.Spot).filter(models.Spot.id == spot_id).first()
     if not spot:
         raise HTTPException(status_code=404, detail="Spot introuvable")
@@ -139,6 +148,7 @@ def update_spot(spot_id: int, payload: schemas.SpotUpdate, db: Session = Depends
 
 @router.delete("/{spot_id}", status_code=204)
 def delete_spot(spot_id: int, db: Session = Depends(get_db)):
+    db.rollback()
     spot = db.query(models.Spot).filter(models.Spot.id == spot_id).first()
     if not spot:
         raise HTTPException(status_code=404, detail="Spot introuvable")
@@ -149,6 +159,7 @@ def delete_spot(spot_id: int, db: Session = Depends(get_db)):
 
 @router.post("/{spot_id}/visits", response_model=schemas.VisitOut, status_code=201)
 def add_visit(spot_id: int, payload: schemas.VisitIn, db: Session = Depends(get_db)):
+    db.rollback()
     spot = db.query(models.Spot).filter(models.Spot.id == spot_id).first()
     if not spot:
         raise HTTPException(status_code=404, detail="Spot introuvable")
@@ -161,6 +172,7 @@ def add_visit(spot_id: int, payload: schemas.VisitIn, db: Session = Depends(get_
 
 @router.delete("/{spot_id}/visits/{visit_id}", status_code=204)
 def delete_visit(spot_id: int, visit_id: int, db: Session = Depends(get_db)):
+    db.rollback()
     visit = db.query(models.Visit).filter(
         models.Visit.id == visit_id, models.Visit.spot_id == spot_id
     ).first()
