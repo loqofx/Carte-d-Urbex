@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+venv/
+.env
+backend/urbex.db
+backend/media/*
+!backend/media/.gitkeep
