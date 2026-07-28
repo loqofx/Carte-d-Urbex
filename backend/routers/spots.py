@@ -15,7 +15,8 @@ router = APIRouter(prefix="/api/spots", tags=["spots"])
 
 def _query_with_relations(db: Session):
     return db.query(models.Spot).options(
-        joinedload(models.Spot.visits), joinedload(models.Spot.photos)
+        joinedload(models.Spot.visits),
+        joinedload(models.Spot.photos)
     )
 
 
@@ -28,16 +29,33 @@ def list_spots(
     db: Session = Depends(get_db),
 ):
     q = _query_with_relations(db)
+    
     if category:
         q = q.filter(models.Spot.category == category)
     if status_filter:
         q = q.filter(models.Spot.status == status_filter)
     if year:
-        q = q.join(models.Visit).filter(models.Visit.visit_date.like(f"{year}%"))
+        q = q.join(models.Spot.visits).filter(models.Visit.visit_date.like(f"{year}%"))
+        
     spots = q.distinct().all()
+    
     if min_rating is not None:
-        spots = [s for s in spots if s.rating_global >= min_rating]
+        spots = [s for s in spots if (s.rating_global or 0) >= min_rating]
+        
     return spots
+
+
+@router.get("/meta/categories", response_model=List[str])
+def list_categories(db: Session = Depends(get_db)):
+    rows = db.query(models.Spot.category).distinct().all()
+    return sorted({r[0] for r in rows if r[0]})
+
+
+@router.get("/meta/years", response_model=List[str])
+def list_years(db: Session = Depends(get_db)):
+    rows = db.query(models.Visit.visit_date).all()
+    years = sorted({r[0][:4] for r in rows if r[0]}, reverse=True)
+    return years
 
 
 @router.get("/{spot_id}", response_model=schemas.SpotOut)
@@ -52,15 +70,13 @@ def get_spot(spot_id: int, db: Session = Depends(get_db)):
 def create_spot(payload: schemas.SpotCreate, db: Session = Depends(get_db)):
     data = payload.model_dump(exclude={"visit_dates"})
     
-    # Conversion propre des objets WarningItem en dict pour SQLAlchemy / JSON
     if "warnings" in data and data["warnings"]:
         data["warnings"] = [w.model_dump() if hasattr(w, "model_dump") else w for w in data["warnings"]]
 
     spot = models.Spot(**data)
     db.add(spot)
-    db.flush()  # Récupération de spot.id
+    db.flush()
 
-    # FIX : Garantir au moins une date de visite
     dates_to_add = payload.visit_dates
     if not dates_to_add:
         dates_to_add = [date.today().isoformat()]
@@ -123,16 +139,3 @@ def delete_visit(spot_id: int, visit_id: int, db: Session = Depends(get_db)):
     db.delete(visit)
     db.commit()
     return None
-
-
-@router.get("/meta/categories", response_model=List[str])
-def list_categories(db: Session = Depends(get_db)):
-    rows = db.query(models.Spot.category).distinct().all()
-    return sorted({r[0] for r in rows if r[0]})
-
-
-@router.get("/meta/years", response_model=List[str])
-def list_years(db: Session = Depends(get_db)):
-    rows = db.query(models.Visit.visit_date).all()
-    years = sorted({r[0][:4] for r in rows if r[0]}, reverse=True)
-    return years

@@ -7,7 +7,10 @@ const API = {
   async _handle(res) {
     if (!res.ok) {
       let detail = res.statusText;
-      try { detail = (await res.json()).detail || detail; } catch (e) {}
+      try { 
+        const errJson = await res.json();
+        detail = errJson.detail || detail; 
+      } catch (e) {}
       throw new Error(detail);
     }
     if (res.status === 204) return null;
@@ -67,13 +70,18 @@ const API = {
   },
 
   async uploadPhotos(spotId, files) {
-    const form = new FormData();
-    for (const f of files) form.append("files", f);
-    const res = await fetch(`${this.base}/api/spots/${spotId}/photos`, {
-      method: "POST",
-      body: form,
-    });
-    return this._handle(res);
+    // Upload image par image vers le backend
+    const results = [];
+    for (const file of files) {
+      const form = new FormData();
+      form.append("file", file);
+      const res = await fetch(`${this.base}/api/media/upload/${spotId}`, {
+        method: "POST",
+        body: form,
+      });
+      results.push(await this._handle(res));
+    }
+    return results;
   },
 
   async deletePhoto(photoId) {
@@ -102,6 +110,12 @@ const API = {
   },
 
   mediaUrl(filename) {
-    return `${this.base}/media/${filename}`;
+    if (!filename) return "";
+    // Si c'est déjà une URL complète
+    if (filename.startsWith("http://") || filename.startsWith("https://")) {
+      return filename;
+    }
+    // Lien direct vers le Bucket Supabase Storage
+    return `https://tlmaephsbaivqtinxfrv.supabase.co/storage/v1/object/public/urbex-media/${filename}`;
   },
 };
