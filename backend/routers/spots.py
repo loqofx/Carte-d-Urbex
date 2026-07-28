@@ -40,14 +40,30 @@ def list_spots(
             
         spots = q.distinct().all()
         
+        # Nettoyage préventif des données JSON corrompues (warnings)
+        for spot in spots:
+            if spot.warnings and isinstance(spot.warnings, list):
+                cleaned_warnings = []
+                for w in spot.warnings:
+                    if isinstance(w, dict):
+                        cleaned_warnings.append(w)
+                    elif hasattr(w, "model_dump"):
+                        cleaned_warnings.append(w.model_dump())
+                spot.warnings = cleaned_warnings
+            elif not isinstance(spot.warnings, list):
+                spot.warnings = []
+
         if min_rating is not None:
             spots = [s for s in spots if (s.rating_global or 0) >= min_rating]
             
         return spots
     except Exception as e:
-        print(f"Erreur lors de la récupération des spots: {e}")
-        # En cas d'erreur sur une relation/jointure, on nettoie le retour
+        print(f"Erreur SQL/Serialization list_spots: {str(e)}")
+        # Fallback de secours si la jointure ou le filtre échoue
         raw_spots = db.query(models.Spot).all()
+        for s in raw_spots:
+            if not isinstance(s.warnings, list):
+                s.warnings = []
         return raw_spots
 
 
@@ -69,6 +85,12 @@ def get_spot(spot_id: int, db: Session = Depends(get_db)):
     spot = _query_with_relations(db).filter(models.Spot.id == spot_id).first()
     if not spot:
         raise HTTPException(status_code=404, detail="Spot introuvable")
+    
+    if spot.warnings and isinstance(spot.warnings, list):
+        spot.warnings = [w if isinstance(w, dict) else w.model_dump() for w in spot.warnings if isinstance(w, (dict, object))]
+    else:
+        spot.warnings = []
+        
     return spot
 
 
@@ -78,6 +100,8 @@ def create_spot(payload: schemas.SpotCreate, db: Session = Depends(get_db)):
     
     if "warnings" in data and data["warnings"]:
         data["warnings"] = [w.model_dump() if hasattr(w, "model_dump") else w for w in data["warnings"]]
+    else:
+        data["warnings"] = []
 
     spot = models.Spot(**data)
     db.add(spot)
