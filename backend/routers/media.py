@@ -1,72 +1,53 @@
-"""
-Endpoints pour l'upload et la suppression de photos.
-"""
 import os
 import uuid
-from typing import List
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, UploadFile, File, HTTPException, Depends
 from sqlalchemy.orm import Session
-
-import models
-import schemas
 from database import get_db
+import models
+from supabase import create_client, Client
 
-router = APIRouter(prefix="/api", tags=["media"])
+router = APIRouter(prefix="/media", tags=["media"])
 
-MEDIA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "media")
-ALLOWED_EXT = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
+# Récupération des accès Supabase
+SUPABASE_URL = os.getenv("SUPABASE_URL", "https://TON-PROJET.supabase.co")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY", "TA-CLE-ANON-PUBLIC-SUPABASE")
 
+# Création du client Supabase
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+BUCKET_NAME = "urbex-media"
 
-@router.post("/spots/{spot_id}/photos", response_model=List[schemas.PhotoOut], status_code=201)
-async def upload_photos(spot_id: int, files: List[UploadFile] = File(...), db: Session = Depends(get_db)):
+@router.post("/upload/{spot_id}")
+async def upload_photo(spot_id: int, file: UploadFile = File(...), db: Session = Depends(get_db)):
+    # Vérifier si le spot existe
     spot = db.query(models.Spot).filter(models.Spot.id == spot_id).first()
     if not spot:
-        raise HTTPException(status_code=404, detail="Spot introuvable")
+        raise HTTPException(status_code=404, detail="Spot non trouvé")
 
-    os.makedirs(MEDIA_DIR, exist_ok=True)
-    has_cover = db.query(models.Photo).filter(
-        models.Photo.spot_id == spot_id, models.Photo.is_cover.is_(True)
-    ).first() is not None
+    # Générer un nom de fichier unique
+    file_ext = file.filename.split(".")[-1]
+    unique_filename = f"spot_{spot_id}_{uuid.uuid4().hex}.{file_ext}"
 
-    created = []
-    for f in files:
-        ext = os.path.splitext(f.filename)[1].lower()
-        if ext not in ALLOWED_EXT:
-            continue
-        fname = f"{uuid.uuid4().hex}{ext}"
-        dest = os.path.join(MEDIA_DIR, fname)
-        with open(dest, "wb") as out:
-            out.write(await f.read())
-        photo = models.Photo(spot_id=spot_id, filename=fname, is_cover=not has_cover)
-        has_cover = True
-        db.add(photo)
-        created.append(photo)
+    # Lire les octets du fichier
+    contents = await file.read()
 
-    db.commit()
-    for p in created:
-        db.refresh(p)
-    return created
+    try:
+        # Envoi du fichier vers Supabase Storage
+        supabase.storage.from_(BUCKET_NAME).upload(
+            path=unique_filename,
+            file=contents,
+            file_options={"content-type": file.content_type}
+        )
 
+        # Récupérer l'URL publique de la photo
+        photo_url = supabase.storage.from_(BUCKET_NAME).get_public_url(unique_filename)
 
-@router.delete("/photos/{photo_id}", status_code=204)
-def delete_photo(photo_id: int, db: Session = Depends(get_db)):
-    photo = db.query(models.Photo).filter(models.Photo.id == photo_id).first()
-    if not photo:
-        raise HTTPException(status_code=404, detail="Photo introuvable")
-    path = os.path.join(MEDIA_DIR, photo.filename)
-    if os.path.exists(path):
-        os.remove(path)
-    db.delete(photo)
-    db.commit()
-    return None
+        # Sauvegarder l'URL dans la base de données
+        new_photo = models.Photo(spot_id=spot_id, url=photo_url)
+        db.add(new_photo)
+        db.commit()
+        db.refresh(new_photo)
 
+        return {"message": "Photo téléversée avec succès", "url": photo_url, "photo_id": new_photo.id}
 
-@router.put("/photos/{photo_id}/cover", status_code=200)
-def set_cover(photo_id: int, db: Session = Depends(get_db)):
-    photo = db.query(models.Photo).filter(models.Photo.id == photo_id).first()
-    if not photo:
-        raise HTTPException(status_code=404, detail="Photo introuvable")
-    db.query(models.Photo).filter(models.Photo.spot_id == photo.spot_id).update({"is_cover": False})
-    photo.is_cover = True
-    db.commit()
-    return {"ok": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erreur lors de l'upload : {str(e)}")
