@@ -1,10 +1,10 @@
 """
 Endpoints CRUD pour les spots + filtres dynamiques.
 """
+from datetime import date
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import func
 
 import models
 import schemas
@@ -51,17 +51,25 @@ def get_spot(spot_id: int, db: Session = Depends(get_db)):
 @router.post("", response_model=schemas.SpotOut, status_code=201)
 def create_spot(payload: schemas.SpotCreate, db: Session = Depends(get_db)):
     data = payload.model_dump(exclude={"visit_dates"})
-    data["warnings"] = [w for w in data["warnings"]]
+    
+    # Conversion propre des objets WarningItem en dict pour SQLAlchemy / JSON
+    if "warnings" in data and data["warnings"]:
+        data["warnings"] = [w.model_dump() if hasattr(w, "model_dump") else w for w in data["warnings"]]
+
     spot = models.Spot(**data)
     db.add(spot)
-    db.flush()  # pour obtenir spot.id
+    db.flush()  # Récupération de spot.id
 
-    for d in payload.visit_dates:
+    # FIX : Garantir au moins une date de visite
+    dates_to_add = payload.visit_dates
+    if not dates_to_add:
+        dates_to_add = [date.today().isoformat()]
+
+    for d in dates_to_add:
         db.add(models.Visit(spot_id=spot.id, visit_date=d))
 
     db.commit()
-    db.refresh(spot)
-    return spot
+    return get_spot(spot.id, db)
 
 
 @router.put("/{spot_id}", response_model=schemas.SpotOut)
@@ -69,12 +77,18 @@ def update_spot(spot_id: int, payload: schemas.SpotUpdate, db: Session = Depends
     spot = db.query(models.Spot).filter(models.Spot.id == spot_id).first()
     if not spot:
         raise HTTPException(status_code=404, detail="Spot introuvable")
+    
     update_data = payload.model_dump(exclude_unset=True)
+    if "warnings" in update_data and update_data["warnings"] is not None:
+        update_data["warnings"] = [
+            w.model_dump() if hasattr(w, "model_dump") else w for w in update_data["warnings"]
+        ]
+
     for key, value in update_data.items():
         setattr(spot, key, value)
+        
     db.commit()
-    db.refresh(spot)
-    return spot
+    return get_spot(spot.id, db)
 
 
 @router.delete("/{spot_id}", status_code=204)
@@ -114,7 +128,7 @@ def delete_visit(spot_id: int, visit_id: int, db: Session = Depends(get_db)):
 @router.get("/meta/categories", response_model=List[str])
 def list_categories(db: Session = Depends(get_db)):
     rows = db.query(models.Spot.category).distinct().all()
-    return sorted({r[0] for r in rows})
+    return sorted({r[0] for r in rows if r[0]})
 
 
 @router.get("/meta/years", response_model=List[str])
