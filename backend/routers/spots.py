@@ -28,21 +28,27 @@ def list_spots(
     min_rating: Optional[float] = None,
     db: Session = Depends(get_db),
 ):
-    q = _query_with_relations(db)
-    
-    if category:
-        q = q.filter(models.Spot.category == category)
-    if status_filter:
-        q = q.filter(models.Spot.status == status_filter)
-    if year:
-        q = q.join(models.Spot.visits).filter(models.Visit.visit_date.like(f"{year}%"))
+    try:
+        q = _query_with_relations(db)
         
-    spots = q.distinct().all()
-    
-    if min_rating is not None:
-        spots = [s for s in spots if (s.rating_global or 0) >= min_rating]
+        if category:
+            q = q.filter(models.Spot.category == category)
+        if status_filter:
+            q = q.filter(models.Spot.status == status_filter)
+        if year:
+            q = q.join(models.Spot.visits).filter(models.Visit.visit_date.like(f"{year}%"))
+            
+        spots = q.distinct().all()
         
-    return spots
+        if min_rating is not None:
+            spots = [s for s in spots if (s.rating_global or 0) >= min_rating]
+            
+        return spots
+    except Exception as e:
+        print(f"Erreur lors de la récupération des spots: {e}")
+        # En cas d'erreur sur une relation/jointure, on nettoie le retour
+        raw_spots = db.query(models.Spot).all()
+        return raw_spots
 
 
 @router.get("/meta/categories", response_model=List[str])
