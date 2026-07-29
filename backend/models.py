@@ -21,9 +21,9 @@ class Spot(Base):
     lng = Column(Float, nullable=False)
     status = Column(String, nullable=False, default="intact")
 
-    rating_state = Column(Integer, default=0)      # 0-10
-    rating_safety = Column(Integer, default=0)     # 0-10
-    rating_interest = Column(Integer, default=0)   # 0-10
+    rating_state = Column(Integer, default=0)      # 0-10 (État)
+    rating_safety = Column(Integer, default=0)     # 0-10 (Risque)
+    rating_interest = Column(Integer, default=0)   # 0-10 (Intérêt)
 
     notes = Column(Text, nullable=True)
     warnings = Column(JSON, default=list)
@@ -35,10 +35,12 @@ class Spot(Base):
 
     @property
     def rating_global(self):
-        vals = [v for v in (self.rating_state, self.rating_safety, self.rating_interest) if v is not None]
-        if not vals:
-            return 0
-        return round(sum(vals) / len(vals), 1)
+        interest = self.rating_interest if self.rating_interest is not None else 0
+        state = self.rating_state if self.rating_state is not None else 0
+        safety = self.rating_safety if self.rating_safety is not None else 0
+        
+        total_score = (interest * 3) + (state * 2) + ((10 - safety) * 1.5)
+        return round(total_score / 6.5, 1)
 
 
 class Visit(Base):

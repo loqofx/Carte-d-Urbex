@@ -130,16 +130,22 @@ const AppUI = {
       const isRed = w.level === "rouge";
       
       let levelText = "";
+      let badgeColor = "";
+
       if (isEquipment) {
         levelText = isRed ? "Obligatoire" : "Conseillé";
       } else {
-        levelText = isRed ? "Danger" : "Attention";
+        levelText = isRed ? "Danger" : "Prudence";
       }
 
+      // 🟠 Orange pour Danger / Obligatoire (au lieu du rouge)
+      // 🟡 Jaune pour Prudence / Conseillé
+      badgeColor = isRed ? "#ee3317" : "#f1c40f";
+
       return `
-        <div class="panel-card p-2 flex items-center justify-between" style="border-left: 4px solid ${isRed ? 'var(--danger)' : 'var(--hazard-yellow)'};">
+        <div class="panel-card p-2 flex items-center justify-between" style="border-left: 4px solid ${badgeColor};">
           <span class="font-medium text-sm">${name}</span>
-          <span class="badge" style="background:${isRed ? 'var(--danger)' : 'var(--hazard-yellow)'}; color:${isRed ? '#fff' : '#000'}; font-size: 0.75rem;">
+          <span class="badge" style="background:${badgeColor}; color:#000; font-weight:600; font-size: 0.75rem;">
             ${levelText}
           </span>
         </div>`;
