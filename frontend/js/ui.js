@@ -45,11 +45,23 @@ const STATUSES = [
   { id: "travaux_en_cours", label: "Travaux en cours" },
 ];
 
-const WARNING_TYPES = [
+// LISTE DISTINCTE : ÉQUIPEMENTS
+const EQUIPMENT_TYPES = [
   { id: "lampe", label: "Lampe", emoji: "🔦" },
   { id: "echelle", label: "Échelle", emoji: "🪜" },
   { id: "corde", label: "Corde", emoji: "🪢" },
+  { id: "tenue_adaptee", label: "Tenue adaptée", emoji: "🦺" },
 ];
+
+// LISTE DISTINCTE : AVERTISSEMENTS & RISQUES
+const HAZARD_TYPES = [
+  { id: "cameras", label: "Caméras", emoji: "📹" },
+  { id: "capteurs", label: "Capteurs", emoji: "🚨" },
+  { id: "gardiens", label: "Gardiens", emoji: "👮" },
+  { id: "voisinage", label: "Voisinage", emoji: "👁️" },
+];
+
+const ALL_TAG_TYPES = [...EQUIPMENT_TYPES, ...HAZARD_TYPES];
 
 function categoryLabel(id) {
   const c = CATEGORIES.find((c) => c.id === id);
@@ -60,6 +72,7 @@ function statusLabel(id) {
   return s ? s.label : id;
 }
 function fmtDate(d) {
+  if (!d) return "";
   const [y, m, day] = d.split("-");
   return `${day}/${m}/${y}`;
 }
@@ -101,7 +114,6 @@ const AppUI = {
     const cover = spot.photos.find((p) => p.is_cover) || spot.photos[0];
     const coverUrl = cover ? API.mediaUrl(cover.filename) : null;
     const gmapsUrl = `https://www.google.com/maps/search/?api=1&query=${spot.lat},${spot.lng}`;
-    const today = getTodayISO();
 
     const ratingRow = (label, value, color) => `
       <div class="mb-2">
@@ -112,17 +124,54 @@ const AppUI = {
         <div class="rating-track"><div class="rating-fill" style="width:${value * 10}%; background:${color};"></div></div>
       </div>`;
 
-    const warningsHtml = (spot.warnings || []).map((w) => {
-      const def = WARNING_TYPES.find((t) => t.id === w.type);
-      const label = def ? `${def.emoji} ${def.label}` : w.type;
-      return `<span class="warn-chip warn-${w.level}">${label}</span>`;
-    }).join("");
+    const renderBadgeItem = (w, isEquipment) => {
+      const def = ALL_TAG_TYPES.find((t) => t.id === w.type);
+      const name = def ? `${def.emoji} ${def.label}` : w.type;
+      const isRed = w.level === "rouge";
+      
+      let levelText = "";
+      if (isEquipment) {
+        levelText = isRed ? "Obligatoire" : "Conseillé";
+      } else {
+        levelText = isRed ? "Danger" : "Attention";
+      }
 
-    const visitsHtml = spot.visits.map((v) => `
-      <li class="flex justify-between items-center panel-card px-3 py-2">
-        <span>${fmtDate(v.visit_date)}</span>
-        <button data-del-visit="${v.id}" class="btn-ghost" style="padding:2px 8px;">✕</button>
-      </li>`).join("") || `<li class="text-sm" style="color:var(--text-dim)">Aucune visite enregistrée.</li>`;
+      return `
+        <div class="panel-card p-2 flex items-center justify-between" style="border-left: 4px solid ${isRed ? 'var(--danger)' : 'var(--hazard-yellow)'};">
+          <span class="font-medium text-sm">${name}</span>
+          <span class="badge" style="background:${isRed ? 'var(--danger)' : 'var(--hazard-yellow)'}; color:${isRed ? '#fff' : '#000'}; font-size: 0.75rem;">
+            ${levelText}
+          </span>
+        </div>`;
+    };
+
+    const spotWarnings = spot.warnings || [];
+    const equipList = spotWarnings.filter(w => EQUIPMENT_TYPES.some(e => e.id === w.type));
+    const hazardList = spotWarnings.filter(w => HAZARD_TYPES.some(h => h.id === w.type));
+
+    const equipBlock = equipList.length > 0 
+      ? `<div class="mt-4">
+           <div class="label-eyebrow mb-2">Équipements</div>
+           <div class="flex flex-col gap-2">${equipList.map(w => renderBadgeItem(w, true)).join("")}</div>
+         </div>`
+      : "";
+
+    const hazardBlock = hazardList.length > 0 
+      ? `<div class="mt-4">
+           <div class="label-eyebrow mb-2">Avertissements</div>
+           <div class="flex flex-col gap-2">${hazardList.map(w => renderBadgeItem(w, false)).join("")}</div>
+         </div>`
+      : "";
+
+    const visitsHtml = spot.visits.map((v) => {
+      const dateVal = typeof v === 'object' ? v.visit_date : v;
+      const isArrested = typeof v === 'object' && (v.was_arrested || v.arrested);
+      return `
+      <li class="flex justify-between items-center panel-card px-3 py-2" style="${isArrested ? 'border-left: 4px solid var(--danger, #ff4444);' : ''}">
+        <span>📅 ${fmtDate(dateVal)}</span>
+        ${isArrested ? '<span class="badge" style="background:var(--danger, #ff4444); color:#fff; font-size:0.75rem;">🚨 Arrêté</span>' : ''}
+      </li>`;
+    }).join("") || `<li class="text-sm" style="color:var(--text-dim)">Aucune visite enregistrée.</li>`;
 
     const photosHtml = spot.photos.map((p) => `
       <div class="relative group">
@@ -142,8 +191,10 @@ const AppUI = {
         </div>
 
         <div class="flex gap-2 mt-3">
-          <a href="${gmapsUrl}" target="urbex_gmaps" class="btn-primary flex-1 text-center no-underline" style="text-decoration:none;">📍 Itinéraire</a>
-          <button class="btn-ghost" id="btn-edit-spot" data-id="${spot.id}">✏️ Éditer</button>
+          <a href="${gmapsUrl}" target="urbex_gmaps" class="btn-primary flex-1 text-center no-underline flex items-center justify-center" style="text-decoration:none;">
+            <img src="googlemaps.png" alt="Google Maps" style="width: 20px; height: 20px; object-fit: contain;">
+          </a>
+          <button class="btn-ghost" id="btn-edit-spot" data-id="${spot.id}">✏️</button>
           <button class="btn-ghost" id="btn-delete-spot" data-id="${spot.id}">🗑️</button>
         </div>
 
@@ -157,28 +208,23 @@ const AppUI = {
           ${ratingRow("Intérêt", spot.rating_interest, "var(--rust)")}
         </div>
 
-        ${warningsHtml ? `<div class="mt-4 flex flex-wrap gap-2">${warningsHtml}</div>` : ""}
+        ${equipBlock}
+        ${hazardBlock}
 
         <div class="mt-4">
           <div class="label-eyebrow mb-2">Visites (${spot.visits.length})</div>
           <ul class="flex flex-col gap-1 list-none p-0 m-0">${visitsHtml}</ul>
-          <div class="flex gap-2 mt-2">
-            <input type="date" id="new-visit-date" value="${today}" class="flex-1" />
-            <button class="btn-ghost" id="btn-add-visit" data-id="${spot.id}">+ Ajouter</button>
-          </div>
         </div>
 
         ${spot.notes && spot.notes.trim() ? `
           <div class="mt-4">
-            <div class="label-eyebrow mb-2">Journal d'anecdotes</div>
+            <div class="label-eyebrow mb-2">Notes</div>
             <p class="panel-card p-3 text-sm" style="white-space:pre-wrap;">${spot.notes}</p>
           </div>` : ""}
 
         <div class="mt-4">
           <div class="label-eyebrow mb-2">Galerie photos</div>
-          <div class="grid grid-cols-3 gap-2">${photosHtml}</div>
-          <input type="file" id="add-photos-input" multiple accept="image/*" class="hidden" data-id="${spot.id}" />
-          <button class="btn-ghost w-full mt-2" id="btn-add-photos" data-id="${spot.id}">+ Ajouter des photos</button>
+          <div class="grid grid-cols-3 gap-2">${photosHtml || '<p class="text-sm" style="color:var(--text-dim)">Aucune photo.</p>'}</div>
         </div>
       </div>
     `;
@@ -188,22 +234,7 @@ const AppUI = {
     document.querySelectorAll("[data-lightbox]").forEach((img) => {
       img.onclick = () => this.openLightbox(img.dataset.lightbox);
     });
-    document.querySelectorAll("[data-del-visit]").forEach((btn) => {
-      btn.onclick = async () => {
-        await API.deleteVisit(spot.id, btn.dataset.delVisit);
-        this.openSpotDetail(spot.id);
-        window.App.refreshSpots();
-      };
-    });
-    const addVisitBtn = document.getElementById("btn-add-visit");
-    if (addVisitBtn) {
-      addVisitBtn.onclick = async () => {
-        const date = document.getElementById("new-visit-date").value;
-        if (!date) return;
-        await API.addVisit(spot.id, date);
-        this.openSpotDetail(spot.id);
-      };
-    }
+
     const editBtn = document.getElementById("btn-edit-spot");
     if (editBtn) editBtn.onclick = () => this.openAddSpotModal(spot);
 
@@ -213,17 +244,6 @@ const AppUI = {
         if (!confirm(`Supprimer définitivement "${spot.name}" ?`)) return;
         await API.deleteSpot(spot.id);
         this.closeSpotDetail();
-        window.App.refreshSpots();
-      };
-    }
-    const addPhotosBtn = document.getElementById("btn-add-photos");
-    const addPhotosInput = document.getElementById("add-photos-input");
-    if (addPhotosBtn) {
-      addPhotosBtn.onclick = () => addPhotosInput.click();
-      addPhotosInput.onchange = async () => {
-        if (!addPhotosInput.files.length) return;
-        await API.uploadPhotos(spot.id, addPhotosInput.files);
-        this.openSpotDetail(spot.id);
         window.App.refreshSpots();
       };
     }
@@ -250,19 +270,29 @@ const AppUI = {
     spots.forEach((spot) => {
       spot.visits.forEach((v) => rows.push({ spot, visit: v }));
     });
-    rows.sort((a, b) => (a.visit.visit_date < b.visit.visit_date ? 1 : -1));
+    rows.sort((a, b) => {
+      const dateA = typeof a.visit === 'object' ? a.visit.visit_date : a.visit;
+      const dateB = typeof b.visit === 'object' ? b.visit.visit_date : b.visit;
+      return dateA < dateB ? 1 : -1;
+    });
 
     const html = rows.map(({ spot, visit }) => {
       const cover = spot.photos.find((p) => p.is_cover) || spot.photos[0];
       const thumb = cover
         ? `<img src="${API.mediaUrl(cover.filename)}" class="w-12 h-12 object-cover rounded-md" />`
         : `<div class="w-12 h-12 flex items-center justify-center rounded-md panel-card text-xl">${spot.emoji || "📍"}</div>`;
+      
+      const vDate = typeof visit === 'object' ? visit.visit_date : visit;
+      const isArrested = typeof visit === 'object' && (visit.was_arrested || visit.arrested);
+
       return `
         <button class="panel-card p-3 flex items-center gap-3 w-full text-left btn-ghost" data-diary-spot="${spot.id}">
           ${thumb}
           <div class="flex-1">
             <div class="font-medium">${spot.name}</div>
-            <div class="text-sm" style="color:var(--text-dim)">${fmtDate(visit.visit_date)}</div>
+            <div class="text-sm" style="color:var(--text-dim)">
+              ${fmtDate(vDate)} ${isArrested ? '🚨' : ''}
+            </div>
           </div>
           <div class="font-display text-lg">${spot.rating_global}</div>
         </button>`;
@@ -332,7 +362,7 @@ const AppUI = {
         <span class="badge badge-${spot.status}">${statusLabel(spot.status)}</span>
         <span class="font-display text-lg">${spot.rating_global}</span>
       </button>
-    `).join("") || `<p style="color:var(--text-dim)">Aucun spot ne correspond à ces filtres.</p>`;
+    `).join("") || `<p style="color:var(--text-dim)">Aucun lieu ne correspond à ces filtres.</p>`;
 
     document.querySelectorAll("[data-rank-spot]").forEach((btn) => {
       btn.onclick = () => {
@@ -392,13 +422,18 @@ const AppUI = {
   },
 
   // ---------------- Formulaire Ajout / Édition spot ----------------
+  visitDatesDraft: [],
+
   openAddSpotModal(spot = null) {
     this.editingSpotId = spot ? spot.id : null;
     this.tempWarnings = spot ? [...(spot.warnings || [])] : [];
+    this.visitDatesDraft = spot && spot.visits 
+      ? spot.visits.map((v) => typeof v === 'object' ? { date: v.visit_date, arrested: !!(v.was_arrested || v.arrested) } : { date: v, arrested: false }) 
+      : [];
     this.pendingFiles = [];
     this.pendingLatLng = spot ? { lat: spot.lat, lng: spot.lng } : null;
 
-    document.getElementById("add-spot-title").textContent = spot ? "Éditer le spot" : "Nouveau spot";
+    document.getElementById("add-spot-title").textContent = spot ? "ÉDITER LE LIEU" : "NOUVEAU LIEU";
     document.getElementById("form-spot").innerHTML = this.renderSpotForm(spot);
     this._wireSpotFormEvents(spot);
     document.getElementById("modal-add-spot").classList.add("open");
@@ -422,7 +457,7 @@ const AppUI = {
     return `
       <div class="grid grid-cols-2 gap-3">
         <div class="col-span-2">
-          <label class="label-eyebrow">Nom du spot</label>
+          <label class="label-eyebrow">Nom</label>
           <input type="text" id="f-name" required value="${s.name}" class="w-full" />
         </div>
         <div>
@@ -447,7 +482,7 @@ const AppUI = {
           <div class="flex gap-2 mt-1">
             <input type="text" id="f-coords" placeholder=" 48.858844, 2.294350" value="${coordsStr}" class="w-full" />
           </div>
-          <button type="button" id="btn-pick-map" class="btn-ghost w-full mt-2">📍 Placer sur la carte</button>
+          <button type="button" id="btn-pick-map" class="btn-ghost w-full mt-2">📍</button>
           <p id="pick-hint" class="text-sm mt-1 hidden" style="color:var(--rust)">Clique sur la carte pour placer le point…</p>
         </div>
 
@@ -464,28 +499,40 @@ const AppUI = {
           <input type="range" min="0" max="10" id="f-rating-interest" value="${s.rating_interest}" class="w-full" />
         </div>
 
+        <!-- SÉLECTION ÉQUIPEMENTS -->
         <div class="col-span-2">
-          <label class="label-eyebrow mb-1 block">Avertissements & matériel requis</label>
-          <div id="warnings-picker" class="flex flex-wrap gap-2"></div>
+          <label class="label-eyebrow mb-1 block">Équipements</label>
+          <div id="equipment-picker" class="flex flex-wrap gap-2"></div>
         </div>
 
-        ${!spot ? `
+        <!-- SÉLECTION AVERTISSEMENTS -->
+        <div class="col-span-2">
+          <label class="label-eyebrow mb-1 block">Avertissements</label>
+          <div id="hazards-picker" class="flex flex-wrap gap-2"></div>
+        </div>
+
+        <!-- SELECTION DE DATES -->
         <div class="col-span-2">
           <label class="label-eyebrow">Date(s) de visite</label>
-          <div class="flex gap-2">
-            <input type="date" id="f-visit-date" value="${today}" class="flex-1 h-12 px-3 text-base" />
-            <button type="button" id="btn-add-visit-date" class="btn-ghost">+ Ajouter</button>
+          <div class="flex gap-2 items-center mt-1 flex-wrap">
+            <input type="date" id="f-visit-date" value="${today}" class="flex-1" style="padding: 8px 12px; border-radius: 6px; box-sizing: border-box;" />
+            
+            <label style="display:flex; align-items:center; gap:4px; font-size:0.85rem; cursor:pointer; background:var(--bg-elevated, #222); padding:8px; border-radius:6px;">
+              <input type="checkbox" id="f-visit-arrested" /> 🚨 Arrêté
+            </label>
+
+            <button type="button" id="btn-add-visit-date" class="btn-ghost" style="padding: 8px 14px;">+ Ajouter</button>
           </div>
-          <div id="visit-dates-list" class="flex flex-wrap gap-2 mt-2"></div>
-        </div>` : ""}
+          <div id="visit-dates-list" class="visits-container mt-2"></div>
+        </div>
 
         <div class="col-span-2">
-          <label class="label-eyebrow">Journal d'anecdotes (optionnel)</label>
+          <label class="label-eyebrow">Notes (optionnel)</label>
           <textarea id="f-notes" rows="3" class="w-full">${s.notes || ""}</textarea>
         </div>
 
         <div class="col-span-2">
-          <label class="label-eyebrow mb-1 block">Photos (Recommandé : par paquets de 10 max)</label>
+          <label class="label-eyebrow mb-1 block">Photos</label>
           <div class="dropzone" id="dropzone">
             <p class="m-0">Déposer ici | Parcourir</p>
             <input type="file" id="f-photos" multiple accept="image/*" class="hidden" />
@@ -495,18 +542,26 @@ const AppUI = {
       </div>
 
       <div class="flex gap-2 mt-4">
-        <button type="submit" id="btn-submit-spot" class="btn-primary flex-1">${spot ? "Enregistrer" : "Créer le spot"}</button>
+        <button type="submit" id="btn-submit-spot" class="btn-primary flex-1">${spot ? "Enregistrer" : "Créer"}</button>
         <button type="button" class="btn-ghost" id="btn-cancel-form">Annuler</button>
       </div>
     `;
   },
 
-  visitDatesDraft: [],
-
   _wireSpotFormEvents(spot) {
-    this.visitDatesDraft = [];
-    this._renderWarningsPicker();
+    this._renderTagPicker("equipment-picker", EQUIPMENT_TYPES);
+    this._renderTagPicker("hazards-picker", HAZARD_TYPES);
     this._renderPendingFiles();
+    this._renderVisitDatesDraft();
+
+    const emojiInput = document.getElementById("f-emoji");
+    if (emojiInput) {
+      emojiInput.oninput = (e) => {
+        const emojiRegex = /\p{Extended_Pictographic}/gu;
+        const matches = e.target.value.match(emojiRegex);
+        e.target.value = matches ? matches[0] : "";
+      };
+    }
 
     ["state", "safety", "interest"].forEach((key) => {
       const input = document.getElementById(`f-rating-${key}`);
@@ -537,9 +592,17 @@ const AppUI = {
     const addVisitBtn = document.getElementById("btn-add-visit-date");
     if (addVisitBtn) {
       addVisitBtn.onclick = () => {
-        const val = document.getElementById("f-visit-date").value;
-        if (!val || this.visitDatesDraft.includes(val)) return;
-        this.visitDatesDraft.push(val);
+        const dateVal = document.getElementById("f-visit-date").value;
+        const arrestedVal = document.getElementById("f-visit-arrested").checked;
+        
+        if (!dateVal) return;
+
+        const exists = this.visitDatesDraft.some(item => (typeof item === 'string' ? item : item.date) === dateVal);
+        if (exists) return;
+
+        this.visitDatesDraft.push({ date: dateVal, arrested: arrestedVal });
+        
+        document.getElementById("f-visit-arrested").checked = false;
         this._renderVisitDatesDraft();
       };
     }
@@ -549,9 +612,21 @@ const AppUI = {
   },
 
   _renderVisitDatesDraft() {
-    document.getElementById("visit-dates-list").innerHTML = this.visitDatesDraft.map((d, i) => `
-      <span class="warn-chip warn-jaune">${fmtDate(d)} <button type="button" data-rm-date="${i}" style="background:none;border:none;color:inherit;cursor:pointer;">✕</button></span>
-    `).join("");
+    const list = document.getElementById("visit-dates-list");
+    if (!list) return;
+
+    list.innerHTML = this.visitDatesDraft.map((item, i) => {
+      const d = typeof item === 'string' ? item : item.date;
+      const isArrested = typeof item === 'object' && item.arrested;
+
+      return `
+        <div class="visit-chip" style="${isArrested ? 'border: 1px solid var(--danger, #ff4444); background: rgba(255, 68, 68, 0.15);' : ''}">
+          <span>📅 ${fmtDate(d)} ${isArrested ? '🚨' : ''}</span>
+          <button type="button" class="btn-del-visit" data-rm-date="${i}" title="Supprimer la date">✕</button>
+        </div>
+      `;
+    }).join("");
+
     document.querySelectorAll("[data-rm-date]").forEach((btn) => {
       btn.onclick = () => {
         this.visitDatesDraft.splice(parseInt(btn.dataset.rmDate), 1);
@@ -560,22 +635,29 @@ const AppUI = {
     });
   },
 
-  _renderWarningsPicker() {
-    document.getElementById("warnings-picker").innerHTML = WARNING_TYPES.map((w) => {
+  _renderTagPicker(containerId, tagList) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+
+    const isEquipmentPicker = containerId === "equipment-picker";
+    const yellowTooltip = isEquipmentPicker ? "Conseillé" : "Prudence";
+    const redTooltip = isEquipmentPicker ? "Obligatoire" : "Danger / Élevé";
+
+    container.innerHTML = tagList.map((w) => {
       const existing = this.tempWarnings.find((tw) => tw.type === w.id);
       const level = existing ? existing.level : null;
       return `
-        <div class="panel-card warning-card p-2 flex flex-col items-center gap-1" style="width:100px;">
+        <div class="panel-card warning-card p-2 flex flex-col items-center gap-1" style="width:105px;">
           <span>${w.emoji}</span>
-          <span class="text-xs text-center" style="color:var(--text-dim)">${w.label}</span>
-          <div class="flex gap-1">
-            <button type="button" data-w="${w.id}" data-lvl="jaune" class="btn-ghost" style="padding:2px 6px; ${level === "jaune" ? "background:var(--hazard-yellow);color:#000;" : ""}">🟨</button>
-            <button type="button" data-w="${w.id}" data-lvl="rouge" class="btn-ghost" style="padding:2px 6px; ${level === "rouge" ? "background:var(--danger);color:#fff;" : ""}">🟥</button>
+          <span class="text-xs text-center font-medium" style="color:var(--text-dim); line-height:1.1;">${w.label}</span>
+          <div class="flex gap-1 mt-1">
+            <button type="button" data-w="${w.id}" data-lvl="jaune" class="btn-ghost" title="${yellowTooltip}" style="padding:2px 6px; ${level === "jaune" ? "background:var(--hazard-yellow);color:#000;" : ""}">🟨</button>
+            <button type="button" data-w="${w.id}" data-lvl="rouge" class="btn-ghost" title="${redTooltip}" style="padding:2px 6px; ${level === "rouge" ? "background:var(--danger);color:#fff;" : ""}">🟥</button>
           </div>
         </div>`;
     }).join("");
 
-    document.querySelectorAll("[data-w]").forEach((btn) => {
+    container.querySelectorAll("[data-w]").forEach((btn) => {
       btn.onclick = () => {
         const type = btn.dataset.w;
         const lvl = btn.dataset.lvl;
@@ -587,7 +669,8 @@ const AppUI = {
         } else {
           this.tempWarnings.push({ type, level: lvl });
         }
-        this._renderWarningsPicker();
+        this._renderTagPicker("equipment-picker", EQUIPMENT_TYPES);
+        this._renderTagPicker("hazards-picker", HAZARD_TYPES);
       };
     });
   },
@@ -624,7 +707,7 @@ const AppUI = {
     const submitBtn = document.getElementById("btn-submit-spot");
     if (submitBtn) {
       submitBtn.disabled = true;
-      submitBtn.textContent = "Création en cours...";
+      submitBtn.textContent = "Enregistrement en cours...";
     }
 
     try {
@@ -638,40 +721,64 @@ const AppUI = {
         alert("Format de coordonnées invalide. Veuillez entrer au format : Latitude, Longitude (Ex: 48.858844, 2.294350)");
         if (submitBtn) {
           submitBtn.disabled = false;
-          submitBtn.textContent = existingSpot ? "Enregistrer" : "Créer le spot";
+          submitBtn.textContent = existingSpot ? "Enregistrer" : "Créer";
         }
         return;
       }
 
+      const emojiVal = document.getElementById("f-emoji").value.trim();
+
       const payload = {
         name: document.getElementById("f-name").value,
         category: document.getElementById("f-category").value,
-        emoji: document.getElementById("f-emoji").value || null,
+        emoji: emojiVal || null,
         status: document.getElementById("f-status").value,
-        lat, lng,
-        rating_state: parseInt(document.getElementById("f-rating-state").value),
-        rating_safety: parseInt(document.getElementById("f-rating-safety").value),
-        rating_interest: parseInt(document.getElementById("f-rating-interest").value),
-        notes: document.getElementById("f-notes").value,
-        warnings: this.tempWarnings,
+        lat, 
+        lng,
+        rating_state: parseInt(document.getElementById("f-rating-state").value) || 0,
+        rating_safety: parseInt(document.getElementById("f-rating-safety").value) || 0,
+        rating_interest: parseInt(document.getElementById("f-rating-interest").value) || 0,
+        notes: document.getElementById("f-notes").value || null,
+        warnings: this.tempWarnings || [],
       };
 
       let spotId;
       if (existingSpot) {
         await API.updateSpot(existingSpot.id, payload);
         spotId = existingSpot.id;
-      } else {
-        // CORRECTION : Prise en compte de la date du champ si non ajoutée via le bouton '+'
-        const dateInput = document.getElementById("f-visit-date");
-        if (this.visitDatesDraft.length === 0 && dateInput && dateInput.value) {
-          this.visitDatesDraft.push(dateInput.value);
+
+        if (this.visitDatesDraft && this.visitDatesDraft.length > 0) {
+          const currentVisits = existingSpot.visits ? existingSpot.visits.map(v => typeof v === 'object' ? v.visit_date : v) : [];
+          for (const item of this.visitDatesDraft) {
+            const dateStr = typeof item === 'object' ? item.date : item;
+            const isArrested = typeof item === 'object' ? !!item.arrested : false;
+            if (dateStr && !currentVisits.includes(dateStr)) {
+              await API.addVisit(spotId, dateStr, isArrested);
+            }
+          }
         }
-        payload.visit_dates = this.visitDatesDraft;
+      } else {
+        const dateInput = document.getElementById("f-visit-date");
+        const arrestedInput = document.getElementById("f-visit-arrested");
+        if (this.visitDatesDraft.length === 0 && dateInput && dateInput.value) {
+          this.visitDatesDraft.push({
+            date: dateInput.value,
+            arrested: arrestedInput ? arrestedInput.checked : false
+          });
+        }
+        
+        payload.visit_dates = this.visitDatesDraft.map(item => {
+          if (typeof item === 'object') {
+            return { visit_date: item.date, was_arrested: !!item.arrested };
+          }
+          return { visit_date: item, was_arrested: false };
+        });
+
         const created = await API.createSpot(payload);
         spotId = created.id;
       }
 
-      if (this.pendingFiles.length) {
+      if (this.pendingFiles && this.pendingFiles.length) {
         await API.uploadPhotos(spotId, this.pendingFiles);
       }
 
@@ -682,7 +789,7 @@ const AppUI = {
       alert("Une erreur est survenue lors de l'enregistrement : " + err.message);
       if (submitBtn) {
         submitBtn.disabled = false;
-        submitBtn.textContent = existingSpot ? "Enregistrer" : "Créer le spot";
+        submitBtn.textContent = existingSpot ? "Enregistrer" : "Créer";
       }
     }
   },

@@ -9,7 +9,15 @@ const API = {
       let detail = res.statusText;
       try { 
         const errJson = await res.json();
-        detail = errJson.detail || detail; 
+        if (errJson.detail) {
+          if (typeof errJson.detail === "string") {
+            detail = errJson.detail;
+          } else if (Array.isArray(errJson.detail)) {
+            detail = errJson.detail.map(e => `${e.loc ? e.loc.join('.') : ''}: ${e.msg}`).join(" | ");
+          } else {
+            detail = JSON.stringify(errJson.detail);
+          }
+        }
       } catch (e) {}
       throw new Error(detail);
     }
@@ -55,11 +63,11 @@ const API = {
     return this._handle(res);
   },
 
-  async addVisit(spotId, visitDate) {
+  async addVisit(spotId, visitDate, wasArrested = false) {
     const res = await fetch(`${this.base}/api/spots/${spotId}/visits`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ visit_date: visitDate }),
+      body: JSON.stringify({ visit_date: visitDate, was_arrested: wasArrested }),
     });
     return this._handle(res);
   },
@@ -70,7 +78,6 @@ const API = {
   },
 
   async uploadPhotos(spotId, files) {
-    // Upload image par image vers le backend
     const results = [];
     for (const file of files) {
       const form = new FormData();
@@ -111,11 +118,9 @@ const API = {
 
   mediaUrl(filename) {
     if (!filename) return "";
-    // Si c'est déjà une URL complète
     if (filename.startsWith("http://") || filename.startsWith("https://")) {
       return filename;
     }
-    // Lien direct vers le Bucket Supabase Storage
     return `https://tlmaephsbaivqtinxfrv.supabase.co/storage/v1/object/public/urbex-media/${filename}`;
   },
 };

@@ -29,7 +29,6 @@ def list_spots(
     db: Session = Depends(get_db),
 ):
     try:
-        # Nettoie la transaction au cas où PostgreSQL est resté bloqué sur une erreur précédente
         db.rollback()
 
         q = _query_with_relations(db)
@@ -43,7 +42,6 @@ def list_spots(
             
         spots = q.distinct().all()
         
-        # Nettoyage des données
         for spot in spots:
             if spot.warnings and isinstance(spot.warnings, list):
                 cleaned_warnings = []
@@ -63,7 +61,6 @@ def list_spots(
     except Exception as e:
         db.rollback()
         print(f"Erreur SQL/Serialization list_spots: {str(e)}")
-        # Fallback de secours
         raw_spots = db.query(models.Spot).all()
         for s in raw_spots:
             if not isinstance(s.warnings, list):
@@ -117,10 +114,15 @@ def create_spot(payload: schemas.SpotCreate, db: Session = Depends(get_db)):
 
     dates_to_add = payload.visit_dates
     if not dates_to_add:
-        dates_to_add = [date.today().isoformat()]
+        dates_to_add = [schemas.VisitIn(visit_date=date.today().isoformat(), was_arrested=False)]
 
     for d in dates_to_add:
-        db.add(models.Visit(spot_id=spot.id, visit_date=d))
+        if isinstance(d, str):
+            db.add(models.Visit(spot_id=spot.id, visit_date=d, was_arrested=False))
+        elif hasattr(d, "visit_date"):
+            db.add(models.Visit(spot_id=spot.id, visit_date=d.visit_date, was_arrested=d.was_arrested))
+        elif isinstance(d, dict):
+            db.add(models.Visit(spot_id=spot.id, visit_date=d.get("visit_date"), was_arrested=d.get("was_arrested", False)))
 
     db.commit()
     return get_spot(spot.id, db)
@@ -163,7 +165,7 @@ def add_visit(spot_id: int, payload: schemas.VisitIn, db: Session = Depends(get_
     spot = db.query(models.Spot).filter(models.Spot.id == spot_id).first()
     if not spot:
         raise HTTPException(status_code=404, detail="Spot introuvable")
-    visit = models.Visit(spot_id=spot_id, visit_date=payload.visit_date)
+    visit = models.Visit(spot_id=spot_id, visit_date=payload.visit_date, was_arrested=payload.was_arrested)
     db.add(visit)
     db.commit()
     db.refresh(visit)

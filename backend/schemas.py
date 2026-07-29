@@ -1,13 +1,13 @@
 """
 Schémas Pydantic pour la validation des données entrantes/sortantes.
 """
-from typing import List, Optional
+from typing import List, Optional, Union
 from pydantic import BaseModel, ConfigDict
 
 
 class WarningItem(BaseModel):
-    type: str          # ex: "masque", "lampe", "echelle", "corde"
-    level: str          # "rouge" | "jaune"
+    type: str
+    level: str
 
 
 class PhotoOut(BaseModel):
@@ -19,12 +19,14 @@ class PhotoOut(BaseModel):
 
 class VisitIn(BaseModel):
     visit_date: str
+    was_arrested: bool = False
 
 
 class VisitOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
     visit_date: str
+    was_arrested: bool = False
 
 
 class SpotBase(BaseModel):
@@ -42,7 +44,7 @@ class SpotBase(BaseModel):
 
 
 class SpotCreate(SpotBase):
-    visit_dates: List[str] = []  # dates de visite à la création
+    visit_dates: List[Union[VisitIn, str]] = []  # VisitIn est placé en premier pour prioriser le mode objet
 
 
 class SpotUpdate(BaseModel):

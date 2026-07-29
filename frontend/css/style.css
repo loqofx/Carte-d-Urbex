@@ -59,13 +59,33 @@ html, body, #root {
   height: 100vh;
 }
 
-/* ---------- Fond de carte Leaflet ---------- */
+/* ---------- Neutralisation des grilles & Uniformisation des tuiles Leaflet ---------- */
 .leaflet-container {
-  background: var(--bg);
+  background: var(--bg) !important;
   font-family: var(--font-body);
 }
 
-.spot-marker-wrapper { background: transparent; border: none; }
+.leaflet-tile-pane,
+.leaflet-tile-container,
+.leaflet-tile {
+  filter: none !important;
+  -webkit-filter: none !important;
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
+  backface-visibility: hidden !important;
+  -webkit-backface-visibility: hidden !important;
+  image-rendering: -webkit-optimize-contrast;
+}
+
+/* Wrapper Leaflet : Garantit le centrage exact du pin sur les coordonnées GPS */
+.spot-marker-wrapper { 
+  background: transparent; 
+  border: none;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
 
 /* ---------- Navbar flottante ---------- */
 .navbar {
@@ -107,7 +127,6 @@ html, body, #root {
   transition: background 0.15s ease, transform 0.15s ease, color 0.15s ease;
 }
 
-/* Survol Navbar : Jaune translucide */
 .nav-btn:hover {
   background: rgba(232, 178, 60, 0.25) !important;
   color: var(--hazard-yellow) !important;
@@ -219,24 +238,41 @@ html, body, #root {
 .badge-demoli { background: rgba(110,100,90,0.25); color: var(--text-dim); border-color: rgba(110,100,90,0.4); }
 .badge-rachete_renove { background: rgba(74,143,140,0.2); color: #8fd0cc; border-color: rgba(74,143,140,0.4); }
 
-/* ---------- Marqueurs carte ---------- */
+/* ---------- Marqueurs carte & Tailles dynamiques ---------- */
 .spot-marker {
-  width: 38px;
-  height: 38px;
+  width: 30px;
+  height: 30px;
   border-radius: 50%;
   background: var(--panel);
   border: 2px solid var(--hazard-yellow);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 18px;
+  font-size: 15px;
   cursor: pointer;
   box-shadow: 0 4px 12px rgba(0,0,0,0.4);
-  transition: transform 0.15s ease;
+  transition: transform 0.15s ease, width 0.25s cubic-bezier(0.4, 0, 0.2, 1), height 0.25s cubic-bezier(0.4, 0, 0.2, 1), font-size 0.25s cubic-bezier(0.4, 0, 0.2, 1), border-width 0.25s ease;
   background-size: cover;
   background-position: center;
+  flex-shrink: 0;
 }
-.spot-marker:hover { transform: scale(1.15); }
+.spot-marker:hover { transform: scale(1.2); }
+
+/* Taille au Zoom Moyen */
+.map-zoom-medium .spot-marker {
+  width: 22px;
+  height: 22px;
+  font-size: 11px;
+  border-width: 1.5px;
+}
+
+/* Taille au Petit Zoom (Dézoomé) */
+.map-zoom-small .spot-marker {
+  width: 14px;
+  height: 14px;
+  font-size: 0px;
+  border-width: 1px;
+}
 
 /* ---------- Typography helpers ---------- */
 .font-display { font-family: var(--font-display); }
@@ -340,7 +376,6 @@ button {
   cursor: pointer;
 }
 
-/* Survol global style Navbar pour tous les boutons ghost */
 .btn-ghost:hover {
   background: rgba(232, 178, 60, 0.25) !important;
   color: var(--hazard-yellow) !important;
@@ -348,7 +383,6 @@ button {
   transform: translateY(-1px);
 }
 
-/* Survol des éléments interactifs du formulaire */
 .warning-card {
   transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease;
 }
@@ -357,7 +391,6 @@ button {
   background: rgba(232, 178, 60, 0.08) !important;
 }
 
-/* ---------- Zone de dépôt de photos (Dropzone) ---------- */
 .dropzone {
   border: 2px dashed var(--panel-border);
   background: var(--bg-elevated);
@@ -376,11 +409,6 @@ button {
   color: var(--hazard-yellow);
 }
 
-/* ============================================================
-   BOUTONS & CARTE
-   ============================================================ */
-
-/* 1. Bouton FAB Jaune */
 .fab {
   position: fixed !important;
   right: 2rem !important;
@@ -419,12 +447,10 @@ button {
   transform: scale(1.08) rotate(90deg) !important;
 }
 
-/* 2. Masquer les mentions de copyright */
 .leaflet-control-attribution {
   display: none !important;
 }
 
-/* 3. Boutons Maps / Satellite (haut à gauche) */
 .leaflet-top.leaflet-left {
   top: 20px !important;
 }
@@ -451,14 +477,12 @@ button {
   color: var(--hazard-yellow) !important;
 }
 
-/* Bouton sélectionné */
 .leaflet-left .map-style-switcher a.active {
   background: #E8B23C !important;
   color: #16120f !important;
   font-weight: bold !important;
 }
 
-/* 4. Boutons Zoom (+/-) */
 .leaflet-container .leaflet-control-zoom {
   margin-left: 2rem !important;
   margin-bottom: 2rem !important;
@@ -487,19 +511,97 @@ button {
   transform: translateY(-1px) !important;
 }
 
-/* Masquer les scrollbars */
-*::-webkit-scrollbar {
-  display: none !important;
+*::-webkit-scrollbar { display: none !important; }
+* { scrollbar-width: none !important; -ms-overflow-style: none !important; }
+::-webkit-scrollbar { width: 0px !important; height: 0px !important; background: transparent !important; display: none !important; }
+
+input[type="date"] {
+  padding: 8px 12px;
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  font-size: 0.95rem;
+  width: 100%;
+  box-sizing: border-box;
+  outline: none;
+  background-color: var(--bg-elevated);
+  color: var(--text);
 }
 
-* {
-  scrollbar-width: none !important;
-  -ms-overflow-style: none !important;
+input[type="date"]:focus {
+  border-color: var(--hazard-yellow);
+  box-shadow: 0 0 0 2px rgba(232, 178, 60, 0.2);
 }
 
-::-webkit-scrollbar {
-  width: 0px !important;
-  height: 0px !important;
+/* ---------- Container de la liste de puces de dates ---------- */
+.visits-container {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  gap: 8px !important;
+  margin-top: 8px !important;
+}
+
+/* ---------- Style d'une puce (Chip) de Date distincte ---------- */
+.visit-chip {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  background: var(--bg-elevated) !important;
+  border: 1px solid var(--panel-border) !important;
+  color: var(--text) !important;
+  padding: 6px 12px !important;
+  border-radius: 20px !important;
+  font-size: 0.85rem !important;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.visit-chip:hover {
+  border-color: var(--hazard-yellow) !important;
+}
+
+.visit-chip .btn-del-visit {
   background: transparent !important;
-  display: none !important;
+  border: none !important;
+  color: var(--danger) !important;
+  font-weight: bold !important;
+  font-size: 1rem !important;
+  cursor: pointer !important;
+  padding: 0 0 0 4px !important;
+  line-height: 1 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  transition: color 0.15s ease, transform 0.15s ease;
+}
+
+.visit-chip .btn-del-visit:hover {
+  color: #ff6b6b !important;
+  transform: scale(1.2);
+}
+
+.badge-jaune {
+  background-color: rgba(232, 178, 60, 0.15);
+  color: var(--hazard-yellow);
+  border: 1px solid rgba(232, 178, 60, 0.3);
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  margin-right: 6px;
+}
+
+.badge-rouge {
+  background-color: rgba(179, 64, 47, 0.15);
+  color: #e08978;
+  border: 1px solid rgba(179, 64, 47, 0.3);
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  margin-right: 6px;
+}
+
+input[type="range"]:focus,
+input[type="range"]:active {
+  outline: none !important;
+  box-shadow: none !important;
+  -webkit-tap-highlight-color: transparent;
 }

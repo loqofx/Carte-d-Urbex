@@ -45,6 +45,11 @@ const MapModule = {
         });
       }
     });
+
+    // Ajustement de la taille des pins au dézoom/zoom
+    this.map.on("zoomend", () => {
+      this._updateMarkerSizes();
+    });
   },
 
   _addStyleSwitcher() {
@@ -85,6 +90,20 @@ const MapModule = {
     this.markers = {};
   },
 
+  _getSpotEmoji(spot) {
+    // 1. Emoji personnalisé prioritaire
+    if (spot.emoji && spot.emoji.trim() !== "") {
+      return spot.emoji;
+    }
+    // 2. Sinon emoji de la catégorie
+    if (typeof CATEGORIES !== "undefined") {
+      const cat = CATEGORIES.find((c) => c.id === spot.category);
+      if (cat && cat.emoji) return cat.emoji;
+    }
+    // 3. Fallback si non trouvé
+    return "📍";
+  },
+
   renderMarkers(spots) {
     this.clearMarkers();
     spots.forEach((spot) => {
@@ -92,17 +111,38 @@ const MapModule = {
       const bgStyle = cover
         ? `background-image:url(${API.mediaUrl(cover.filename)});`
         : "";
+      
+      const displayEmoji = this._getSpotEmoji(spot);
+
       const icon = L.divIcon({
         className: "spot-marker-wrapper",
-        html: `<div class="spot-marker" style="${bgStyle}">${cover ? "" : (spot.emoji || "📍")}</div>`,
-        iconSize: [38, 38],
-        iconAnchor: [19, 19],
+        html: `<div class="spot-marker" style="${bgStyle}">${cover ? "" : displayEmoji}</div>`,
+        iconSize: [32, 32],
+        iconAnchor: [16, 16],
       });
 
       const marker = L.marker([spot.lat, spot.lng], { icon }).addTo(this.map);
       marker.on("click", () => window.AppUI.openSpotDetail(spot.id, true));
       this.markers[spot.id] = marker;
     });
+
+    this._updateMarkerSizes();
+  },
+
+  _updateMarkerSizes() {
+    const zoom = this.map.getZoom();
+    const container = this.map.getContainer();
+    
+    // Réduction progressive selon le niveau de zoom
+    if (zoom <= 7) {
+      container.classList.add("map-zoom-small");
+      container.classList.remove("map-zoom-medium");
+    } else if (zoom <= 10) {
+      container.classList.add("map-zoom-medium");
+      container.classList.remove("map-zoom-small");
+    } else {
+      container.classList.remove("map-zoom-small", "map-zoom-medium");
+    }
   },
 
   flyTo(lng, lat) {
